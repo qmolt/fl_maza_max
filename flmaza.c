@@ -8,9 +8,11 @@ void ext_main(void *r)
 	class_addmethod(c, (method)fl_maza_int, "int", A_LONG, 0);
 	class_addmethod(c, (method)fl_maza_bang, "bang", 0);
 	class_addmethod(c, (method)fl_maza_assist, "assist", A_CANT, 0);
+
 	class_addmethod(c, (method)fl_maza_bar, "bar", A_GIMME, 0);
 	class_addmethod(c, (method)fl_maza_loop, "loop", A_GIMME, 0);
 	class_addmethod(c, (method)fl_maza_beatms, "ms_beat", A_GIMME, 0);
+	class_addmethod(c, (method)fl_maza_wrapmode, "wrapmode", A_GIMME, 0);
 
 	class_register(CLASS_BOX, c);
 	fl_maza_class = c;
@@ -92,7 +94,7 @@ void fl_maza_assist(t_fl_maza *x, void *b, long msg, long arg, char *dst)
 {
 	if (msg == ASSIST_INLET) {
 		switch (arg) {
-		case I_INPUT: sprintf(dst, "(bang)on; (int,float)on/off; (messages)bar, ms_beat"); break;
+		case I_INPUT: sprintf(dst, "(bang)on; (int,float)on/off; (messages)bar, ms_beat, wrapmode"); break;
 		}
 	}
 	else if (msg == ASSIST_OUTLET) {
@@ -123,13 +125,27 @@ void fl_maza_beatms(t_fl_maza *x, t_symbol *msg, short argc, t_atom *argv)
 	long ac = argc;
 	long beat_ms;
 
-	if (ac != 1) { object_error((t_object *)x, "beat_ms: only 1 argument"); return; }
-	if (atom_gettype(ap) != A_FLOAT || atom_gettype(ap) != A_LONG) { object_error((t_object *)x, "beat_ms: argument must be a number"); return; }
+	if (ac != 1) { object_error((t_object *)x, "ms_beat: only 1 argument"); return; }
+	if (atom_gettype(ap) != A_FLOAT && atom_gettype(ap) != A_LONG) { object_error((t_object *)x, "ms_beat: argument must be a number"); return; }
 
 	beat_ms = (long)atom_getlong(ap);
-	if (beat_ms < 10.0) { object_error((t_object *)x, "beat_ms: argument must be a positive number greater than 10"); return; }
+	if (beat_ms < 10.0) { object_error((t_object *)x, "ms_beat: argument must be a positive number greater than 10"); return; }
 
 	x->beat_ms = beat_ms;
+}
+
+void fl_maza_wrapmode(t_fl_maza *x, t_symbol *msg, short argc, t_atom *argv)
+{
+	t_atom *ap = argv;
+	long ac = argc;
+	short wrapmode;
+
+	if (ac != 1) { object_error((t_object *)x, "wrapmode: only 1 argument"); return; }
+	if (atom_gettype(ap) != A_LONG && atom_gettype(ap) != A_FLOAT) { object_error((t_object *)x, "wrapmode: argument must be an integer"); return; }
+
+	wrapmode = (short)atom_getlong(ap);
+	if(wrapmode < 0 || wrapmode > WM_TOTAL) { object_error((t_object *)x, "wrapmode: argument must be a positive number less than %d", WM_TOTAL); return; }
+	x->wrap_mode = wrapmode;
 }
 
 void fl_maza_bar(t_fl_maza *x, t_symbol *msg, short argc, t_atom *argv)

@@ -19,7 +19,7 @@
 
 #define MATH_PI 3.14159265358979323846
 
-enum WRAPMODES {WM_CLAMP, WM_REPEAT, WM_MIRROR};
+enum WRAPMODES {WM_CLAMP, WM_REPEAT, WM_MIRROR, WM_TOTAL};
 enum FILTERMODES {FM_LIN, FM_CHROM};// /f0 /f1
 enum NOTECURVES {
 	NC_SET,		// 
@@ -115,6 +115,7 @@ void fl_maza_assist(t_fl_maza *x, void *b, long msg, long arg, char *dst);
 void fl_maza_bar(t_fl_maza *x, t_symbol *msg, short argc, t_atom *argv);
 void fl_maza_loop(t_fl_maza *x, t_symbol *msg, short argc, t_atom *argv);
 void fl_maza_beatms(t_fl_maza *x, t_symbol *msg, short argc, t_atom *argv);
+void fl_maza_wrapmode(t_fl_maza *x, t_symbol *msg, short argc, t_atom *argv);
 void fl_maza_tick(t_fl_maza *x);
 
 void fl_maza_free(t_fl_maza *x);
