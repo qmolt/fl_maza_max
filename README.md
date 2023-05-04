@@ -6,7 +6,7 @@ An external for Max 8 (Max/MSP). 'Maza' is the spanish translation of the word m
 
 # Features
 
-- The beat period (in milliseconds) can be set with a message 'beat_ms'.
+- The beat period (in milliseconds) can be set with a message 'ms_beat'.
 - The external will play any rhythm even if no list of notes was provided.
 - The external has a 'loop' option
 - A filter toggle, when inactive will output float values (linear); when active will output integers approximations (chromatic (dflt)).

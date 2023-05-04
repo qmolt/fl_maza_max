@@ -10,7 +10,7 @@ void ext_main(void *r)
 	class_addmethod(c, (method)fl_maza_assist, "assist", A_CANT, 0);
 	class_addmethod(c, (method)fl_maza_bar, "bar", A_GIMME, 0);
 	class_addmethod(c, (method)fl_maza_loop, "loop", A_GIMME, 0);
-	class_addmethod(c, (method)fl_maza_beatms, "beat_ms", A_GIMME, 0);
+	class_addmethod(c, (method)fl_maza_beatms, "ms_beat", A_GIMME, 0);
 
 	class_register(CLASS_BOX, c);
 	fl_maza_class = c;
@@ -92,12 +92,13 @@ void fl_maza_assist(t_fl_maza *x, void *b, long msg, long arg, char *dst)
 {
 	if (msg == ASSIST_INLET) {
 		switch (arg) {
-		case I_MSBEAT: sprintf(dst, "(int)on/off; (messages)bar, beatms; (sig~)beat period in milliseconds"); break;
+		case I_INPUT: sprintf(dst, "(bang)on; (int,float)on/off; (messages)bar, ms_beat"); break;
 		}
 	}
 	else if (msg == ASSIST_OUTLET) {
 		switch (arg) {
-		case O_OUTPUT: sprintf(dst, "(int) note duration"); break;
+		case O_DUR: sprintf(dst, "(float) note duration in milliseconds"); break;
+		case O_NOTE:sprintf(dst, "(float) note"); break;
 		case O_FINALFLAG: sprintf(dst, "(bang) end flag"); break;
 		}
 	}
