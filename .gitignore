@@ -1,0 +1,6 @@
+#vs files and folders
+*.vcxproj.user
+*.sln
+x64
+.vs
+.DS_STORE
