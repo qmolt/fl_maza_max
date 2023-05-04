@@ -62,7 +62,7 @@ This external is a later version of [fl_ritmo~](https://github.com/qumolt/fl_rit
 
 
 | <img src="media/c54.jpg" width="450" title="fl_ritmo and fl_maza"> |
-| ------------------------ |
+| :----------------------: |
 | *fl\_ritmo and fl\_maza* |
 
 # Coming soon
