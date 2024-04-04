@@ -61,10 +61,6 @@ The output will be the subdivision duration in milliseconds of its respective su
 This external is a later version of [fl_ritmo~](https://github.com/qumolt/fl_ritmo-max). In comparison, fl_maza includes compatibility to play melodies but the major difference is that fl_ritmo~ was a real-time external that counted samples to time the output events, and fl_maza uses the same clock efficiently to avoid linking a method to the DSP chain so it works independiently from dac state, and also outputs float melody values when needed instead of signal values.
 
 
-| <img src="media/c54.jpg" width="450" title="fl_ritmo and fl_maza"> |
-| :----------------------: |
-| *fl\_ritmo and fl\_maza* |
-
 # Coming soon
 
 - grain output interval as a variable/attribute.

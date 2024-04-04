@@ -20,7 +20,7 @@
 #define MATH_PI 3.14159265358979323846
 
 enum WRAPMODES {WM_CLAMP, WM_REPEAT, WM_MIRROR, WM_TOTAL};
-enum FILTERMODES {FM_LIN, FM_CHROM};// /f0 /f1
+enum FILTERMODES {FM_REAL, FM_NAT};// /f0 /f1
 enum NOTECURVES {
 	NC_SET,		// 
 	NC_FLAT,	// y = a			// /a	1: constant 

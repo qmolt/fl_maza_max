@@ -50,14 +50,14 @@ void *fl_maza_new(t_symbol *s, short argc, t_atom *argv)
 	x->oct_div = DFLT_OCT_DIV;
 
 	x->wrap_mode = WM_CLAMP;
-	x->filter_toggle = FM_CHROM;
+	x->filter_toggle = FM_NAT;
 
 	x->curve_type = NC_FLAT;
 	x->curve_start = (float)(x->oct_div * 5);
 	x->curve_end = (float)(x->oct_div * 5);
-	x->filter_mode = FM_CHROM;
-	x->dur_beat = 0.;
-	x->start_beat = 0.;
+	x->filter_mode = FM_NAT;
+	x->dur_beat = 0.0f;
+	x->start_beat = 0.0f;
 
 	x->old_notes = (fl_note *)sysmem_newptr(MAX_NOTES_SIZE * sizeof(fl_note));
 	if (!x->old_notes) { object_error((t_object *)x, "out of memory: no space for notes list"); return x; }
@@ -67,12 +67,12 @@ void *fl_maza_new(t_symbol *s, short argc, t_atom *argv)
 		x->old_notes[i].start = 0;
 		x->old_notes[i].end = 0;
 		x->old_notes[i].curve_type = NC_SET;
-		x->old_notes[i].filter_mode = FM_CHROM;
+		x->old_notes[i].filter_mode = FM_NAT;
 
 		x->new_notes[i].start = 0;
 		x->new_notes[i].end = 0;
 		x->new_notes[i].curve_type = NC_SET;
-		x->new_notes[i].filter_mode = FM_CHROM;
+		x->new_notes[i].filter_mode = FM_NAT;
 	}
 
 	x->old_hits = (fl_beat *)sysmem_newptr(MAX_HITS_SIZE * sizeof(fl_beat));
@@ -170,11 +170,11 @@ void fl_maza_bar(t_fl_maza *x, t_symbol *msg, short argc, t_atom *argv)
 	long total_hits;
 	long total_notes;
 	float beat = DFLT_BEAT;
-	long acum_ones;
 	long subdiv;
 	
-	long k;
 	long legatura;
+	long idx_null;
+	short legatura_flag;
 
 	char *str;
 	char *token = NULL;
@@ -191,7 +191,7 @@ void fl_maza_bar(t_fl_maza *x, t_symbol *msg, short argc, t_atom *argv)
 	acum_notes = 0;
 	acum_bar = 0.;
 
-	x->filter_toggle = FM_CHROM;
+	x->filter_toggle = FM_NAT;
 
 	for (long i = 0; i < ac; i++) {
 		if (atom_gettype(ap + i) == A_FLOAT || atom_gettype(ap + i) == A_LONG) {
@@ -201,37 +201,38 @@ void fl_maza_bar(t_fl_maza *x, t_symbol *msg, short argc, t_atom *argv)
 			bar_string = atom_getsym(ap + i)->s_name;
 
 			if (bar_string[0] == '<') { 
-				acum_ones = 0;
-				subdiv = 0;
 				idx_string = 1;
-				while (bar_string[idx_string] != '\0') {
-					if(bar_string[idx_string] == '1'){
-						acum_ones++;
-					}
-					subdiv++;
-					idx_string++;
-				}
+				while (bar_string[idx_string] != '\0') {idx_string++;}
 				
-				if (acum_ones > 0) {
-					idx_string = 1;
-					while (bar_string[idx_string] != '\0') {
-						if (bar_string[idx_string] == '1' && acum_hits < MAX_HITS_SIZE) {
+				subdiv = idx_string - 1;
+				idx_null = idx_string + 1;
+				legatura = 0;
+				legatura_flag = 0;
+				for (long j = 1; j < idx_null; j++) {
+					if (acum_hits >= MAX_HITS_SIZE) {break;}
 
-							k = 1;
-							while (bar_string[idx_string + k] == '-') { k++; }
-							legatura = k;
-
-							x->new_hits[acum_hits].dur_beat = (beat * legatura) / subdiv;
-							x->new_hits[acum_hits].start_beat = acum_bar + beat * (idx_string - 1) / subdiv;
-							acum_hits++;
-						}
-						idx_string += k;
+					if (bar_string[j] == '1') {
+						x->new_hits[acum_hits].dur_beat = beat / subdiv;
+						x->new_hits[acum_hits].start_beat = acum_bar + beat * (j - 1) / subdiv;
+						acum_hits++;
+						legatura = 0;
+						legatura_flag = 1;
 					}
+					else if (bar_string[j] == '0') {
+						legatura_flag = 0;
+					}
+					else if (bar_string[j] == '-') {
+						legatura++;
+						if (legatura_flag) {
+							x->new_hits[acum_hits].dur_beat = beat * (legatura + 1) / subdiv;
+						}
+					}
+					
 				}
 
 				acum_bar += beat;
 			}
-			else {
+			else if (bar_string[0] == '/') {
 				
 				barmemlen = (long)strlen(bar_string) + 1;
 
@@ -264,8 +265,8 @@ void fl_maza_bar(t_fl_maza *x, t_symbol *msg, short argc, t_atom *argv)
 							else if (!strcmp(token, "lt")) { curve_type = NC_EOI_ACOS; }
 							else if (!strcmp(token, "lr")) { curve_type = NC_EOI_POW; }
 							else if (!strcmp(token, "lc")) { curve_type = NC_EOI_CIRC; }
-							else if (!strcmp(token, "f0")) { x->filter_toggle = FM_LIN; }
-							else if (!strcmp(token, "f1")) { x->filter_toggle = FM_CHROM; }
+							else if (!strcmp(token, "f0")) { x->filter_toggle = FM_REAL; }
+							else if (!strcmp(token, "f1")) { x->filter_toggle = FM_NAT; }
 						}
 						else {
 							if (curve_type == 0) {
@@ -534,9 +535,9 @@ void fl_maza_tick(t_fl_maza *x)
 		note_final = curve_start + (curve_end - curve_start) * note_ease;
 
 		switch (filter_mode) {
-		case FM_LIN:
+		case FM_REAL:
 			break;
-		case FM_CHROM:
+		case FM_NAT:
 			note_final = (float)floor(note_final);
 			break;
 		}
