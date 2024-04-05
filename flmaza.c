@@ -187,7 +187,7 @@ void fl_maza_bar(t_fl_maza *x, t_symbol *msg, short argc, t_atom *argv)
 
 	short curve_type = NC_SET;
 
-	acum_hits = 0;
+	acum_hits = -1;
 	acum_notes = 0;
 	acum_bar = 0.;
 
@@ -212,9 +212,9 @@ void fl_maza_bar(t_fl_maza *x, t_symbol *msg, short argc, t_atom *argv)
 					if (acum_hits >= MAX_HITS_SIZE) {break;}
 
 					if (bar_string[j] == '1') {
+						acum_hits++;
 						x->new_hits[acum_hits].dur_beat = beat / subdiv;
 						x->new_hits[acum_hits].start_beat = acum_bar + beat * (j - 1) / subdiv;
-						acum_hits++;
 						legatura = 0;
 						legatura_flag = 1;
 					}
@@ -295,7 +295,7 @@ void fl_maza_bar(t_fl_maza *x, t_symbol *msg, short argc, t_atom *argv)
 		}
 	}
 	x->new_cifra = acum_bar;
-	x->total_new_hits = total_hits = acum_hits;
+	x->total_new_hits = total_hits = acum_hits + 1;
 	x->total_new_notes = total_notes = acum_notes;
 
 	clock_unset(x->m_clock);
