@@ -102,7 +102,7 @@ typedef struct _fl_maza {
 } t_fl_maza;
 
 enum INLETS { I_INPUT, NUM_INLETS };
-enum OUTLETS { O_DUR, O_NOTE, O_FINALFLAG, NUM_OUTLETS };
+enum OUTLETS { O_NOTE, O_DUR, O_FINALFLAG, NUM_OUTLETS };
 
 static t_class *fl_maza_class;
 

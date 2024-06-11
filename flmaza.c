@@ -23,8 +23,8 @@ void *fl_maza_new(t_symbol *s, short argc, t_atom *argv)
 	t_fl_maza *x = (t_fl_maza *)object_alloc(fl_maza_class);
 
 	x->m_outlet3 = outlet_new((t_object *)x, "bang");	//final bang
-	x->m_outlet2 = outlet_new((t_object *)x, "float");	//note
-	x->m_outlet1 = outlet_new((t_object *)x, "float");	//dur
+	x->m_outlet2 = outlet_new((t_object *)x, "float");	//dur
+	x->m_outlet1 = outlet_new((t_object *)x, "float");	//note
 
 	x->curve_task = 0;
 	x->dur_task = 0;
@@ -455,6 +455,11 @@ void fl_maza_tick(t_fl_maza *x)
 	start_ms = (long)(start_beat * (float)beat_ms);
 
 	//output note
+	if (dur_task) {
+		outlet_float(x->m_outlet2, (float)hit_ms);
+		dur_task = 0;
+	}
+
 	if (curve_task) {
 		note_norm = (float)MIN(1.0, (elap_ms - start_ms) / (float)hit_ms);
 		
@@ -542,12 +547,7 @@ void fl_maza_tick(t_fl_maza *x)
 			break;
 		}
 
-		outlet_float(x->m_outlet2, note_final);
-	}
-
-	if (dur_task) {
-		outlet_float(x->m_outlet1, (float)hit_ms);
-		dur_task = 0;
+		outlet_float(x->m_outlet1, note_final);
 	}
 
 	if (end_task) {
