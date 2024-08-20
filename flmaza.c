@@ -408,6 +408,9 @@ void fl_maza_tick(t_fl_maza *x)
 			x->dur_beat = dur_beat;
 			x->start_beat = start_beat;
 
+			hit_ms = (long)(dur_beat * (float)beat_ms);
+			start_ms = (long)(start_beat * (float)beat_ms);
+
 			//notes index and data
 			if (total_notes > 0) {
 				switch (wrap_mode) {
@@ -524,22 +527,23 @@ void fl_maza_tick(t_fl_maza *x)
 				note_ease = 1.0;
 				break;
 			}
-		}
 
-		note_final = curve_start + (curve_end - curve_start) * note_ease;
+			//note data
+			note_final = curve_start + (curve_end - curve_start) * note_ease;
 
-		switch (filter_mode) {
-		case FM_REAL:
-			break;
-		case FM_NAT:
-			note_final = (float)floor(note_final);
-			break;
-		}
-		
-		//output note
-		if (curve_task) {
-			outlet_float(x->m_outlet1, note_final);
-			curve_task = 0;
+			switch (filter_mode) {
+			case FM_REAL:
+				break;
+			case FM_NAT:
+				note_final = (float)floor(note_final);
+				break;
+			}
+
+			//output note
+			if (curve_task) {
+				outlet_float(x->m_outlet1, note_final);
+				curve_task = 0;
+			}
 		}
 	}
 	else {
