@@ -43,7 +43,7 @@ void *fl_maza_new(t_symbol *s, short argc, t_atom *argv)
 	x->time = (long)gettime_forobject((t_object *)x);
 	x->interval = DFLT_TIMEINTERVAL; //interval < 5 ? 5 : interval;
 
-	x->loop_mode = 0;
+	x->loop_mode = DFLT_LOOPMODE;
 
 	x->index_old_notes = 0;
 	
@@ -99,8 +99,8 @@ void fl_maza_assist(t_fl_maza *x, void *b, long msg, long arg, char *dst)
 	}
 	else if (msg == ASSIST_OUTLET) {
 		switch (arg) {
-		case O_DUR: sprintf(dst, "(float) note duration in milliseconds"); break;
 		case O_NOTE:sprintf(dst, "(float) note"); break;
+		case O_DUR: sprintf(dst, "(float) note duration in milliseconds"); break;
 		case O_FINALFLAG: sprintf(dst, "(bang) end flag"); break;
 		}
 	}
@@ -152,7 +152,7 @@ void fl_maza_bar(t_fl_maza *x, t_symbol *msg, short argc, t_atom *argv)
 {
 	/*
 	//format: mel bar <div...
-		ie: /s/32/x/35/a/30 4.5<10010
+		ie: /s/32/x/35/a/30 4.5 '<10010'
 
 		mel:	/{a, x, it, ip, ...}
 		bar:	(int/float)
@@ -385,156 +385,145 @@ void fl_maza_tick(t_fl_maza *x)
 	long bar_ms = (long)(cifra * (float)beat_ms);
 
 	short curve_task = x->curve_task;
-	short dur_task = x->dur_task;
-	short end_task = x->end_task;
-
-	//get next_start_ms
-	if (index_hits < total_hits) {
-		next_start_ms = (long)(p_hits[index_hits].start_beat * (float)beat_ms);
-	}
-	else if (index_hits == total_hits) {
-		next_start_ms = bar_ms;
-	}
-	else {
-		return;
-	}
 
 	//new index
-	if (elap_ms >= next_start_ms) {
+	if (index_hits < total_hits) {
 
-		if (index_hits < total_hits) { 
-			dur_task = 1; 
-		}
-		else { 
-			end_task = 1; 
+		//next start
+		next_start_ms = (long)(p_hits[index_hits].start_beat * (float)beat_ms);
+
+		//schedule next tick call
+		clock_delay(x->m_clock, x->interval);
+
+		//calculate every tick
+		hit_ms = (long)(dur_beat * (float)beat_ms);
+		start_ms = (long)(start_beat * (float)beat_ms);
+
+		//if hit
+		if (elap_ms >= next_start_ms) {
+
+			//hit index and data
+			dur_beat = p_hits[index_hits].dur_beat;
+			start_beat = p_hits[index_hits].start_beat;
+			x->dur_beat = dur_beat;
+			x->start_beat = start_beat;
+
+			//notes index and data
+			if (total_notes > 0) {
+				switch (wrap_mode) {
+				case WM_CLAMP:
+					index_notes = MIN(index_hits, total_notes - 1);
+					break;
+				case WM_REPEAT:
+					index_notes = z_mod(index_hits, total_notes);
+					break;
+				case WM_MIRROR:
+					mirror_dn = z_mod(index_hits, (total_notes - 1) * 2);
+					mirror_up = z_mod(-index_hits, total_notes - 1);
+					mirror_sw = (short)floor((float)mirror_dn / (float)total_notes);
+					index_notes = (mirror_sw) ? mirror_up : mirror_dn;
+					break;
+				default: //WM_CLAMP
+					index_notes = MIN(index_hits, total_notes - 1);
+				}
+				curve_type = p_note[index_notes].curve_type;
+				curve_start = p_note[index_notes].start;
+				curve_end = p_note[index_notes].end;
+				filter_mode = p_note[index_notes].filter_mode;
+
+				x->curve_type = curve_type;
+				x->curve_start = curve_start;
+				x->curve_end = curve_end;
+				x->filter_mode = filter_mode;
+
+				//curve
+				curve_task = 1;
+			}
+
+			//output duration
+			outlet_float(x->m_outlet2, (float)hit_ms);
+
+			//save index
+			x->index_old_hits = ++index_hits;
+			x->index_old_notes = index_notes;
 		}
 
-		//get index_notes
+		//notes data
 		if (total_notes > 0) {
-			switch (wrap_mode) {
-			case WM_CLAMP:
-				index_notes = MIN(index_hits, total_notes - 1);
+			//curve
+			note_norm = (float)MIN(1.0, (elap_ms - start_ms) / (float)hit_ms);
+
+			switch (curve_type) {
+			case NC_FLAT:
+				note_ease = 1.0;
 				break;
-			case WM_REPEAT:
-				index_notes = z_mod(index_hits, total_notes);
+			case NC_LIN:
+				note_ease = note_norm;
 				break;
-			case WM_MIRROR:
-				mirror_dn = z_mod(index_hits, (total_notes - 1) * 2);
-				mirror_up = z_mod(-index_hits, total_notes - 1);
-				mirror_sw = (short)floor((float)mirror_dn / (float)total_notes);
-				index_notes = (mirror_sw) ? mirror_up : mirror_dn;
+			case NC_EI_COS:
+				note_ease = (float)(1.0 - cos(0.5 * note_norm * MATH_PI));
 				break;
-			default: //WM_CLAMP
-				index_notes = MIN(index_hits, total_notes - 1);
+			case NC_EI_POWO:
+				note_ease = (float)pow(note_norm, DFLT_POWEXP);
+				break;
+			case NC_EI_POWU:
+				note_ease = (float)(1.0 - pow(1.0 - note_norm, 1.0 / DFLT_POWEXP));
+				break;
+			case NC_EI_CIRC:
+				note_ease = (float)(1.0 - sqrt(1.0 - pow(note_norm, 20)));
+				break;
+			case NC_EO_SIN:
+				note_ease = (float)sin(note_norm * MATH_PI / 2.0);
+				break;
+			case NC_EO_POWU:
+				note_ease = (float)pow(note_norm, 1.0 / DFLT_POWEXP);
+				break;
+			case NC_EO_POWO:
+				note_ease = (float)(1.0 - pow(1.0 - note_norm, DFLT_POWEXP));
+				break;
+			case NC_EO_CIRC:
+				note_ease = (float)sqrt(1.0 - pow(note_norm - 1.0, 2.0));
+				break;
+			case NC_EIO_COS:
+				note_ease = (float)(-(cos(MATH_PI * note_norm) - 1.0) / 2.0);
+				break;
+			case NC_EIO_POW:
+				if (note_norm < 0.5) {
+					note_ease = (float)(4.0 * pow(note_norm, DFLT_POWEXP));
+				}
+				else {
+					note_ease = (float)(1.0 - (pow(-2.0 * note_norm + 2.0, DFLT_POWEXP)) / 2.0);
+				}
+				break;
+			case NC_EIO_CIRC:
+				if (note_norm < 0.5)
+					note_ease = (float)((1.0 - sqrt(1.0 - pow(2.0 * note_norm, 2.0))) / 2.0);
+				else
+					note_ease = (float)((sqrt(1.0 - pow(-2.0 * note_norm + 2.0, 2.0)) + 1.0) / 2.0);
+				break;
+			case NC_EOI_ACOS:
+				note_ease = (float)(acos(-2.0 * note_norm + 1.0) / MATH_PI);
+				break;
+			case NC_EOI_POW:
+				if (note_norm < 0.5) {
+					note_ease = (float)pow(0.25 * note_norm, 1.0 / DFLT_POWEXP);
+				}
+				else {
+					note_ease = (float)((2.0 - pow(2.0 - 2.0 * note_norm, 1.0 / DFLT_POWEXP)) / 2.0);
+				}
+				break;
+			case NC_EOI_CIRC:
+				if (note_norm < 0.5) {
+					note_ease = (float)((sqrt(1.0 - pow(2.0 * note_norm - 1.0, 2.0))) / 2.0);
+				}
+				else {
+					note_ease = (float)(1.0 - (float)sqrt(note_norm - note_norm * note_norm));
+				}
+				break;
+			default: //NC_FLAT
+				note_ease = 1.0;
+				break;
 			}
-			curve_type = p_note[index_notes].curve_type;
-			curve_start = p_note[index_notes].start;
-			curve_end = p_note[index_notes].end;
-			filter_mode = p_note[index_notes].filter_mode;
-
-			x->curve_type = curve_type;
-			x->curve_start = curve_start;
-			x->curve_end = curve_end;
-			x->filter_mode = filter_mode;
-
-			curve_task = 1;
-		}
-
-		dur_beat = p_hits[index_hits].dur_beat;
-		start_beat = p_hits[index_hits].start_beat;
-
-		x->dur_beat = dur_beat;
-		x->start_beat = start_beat;
-
-		x->index_old_hits = ++index_hits;
-	}
-
-	clock_delay(x->m_clock, x->interval);
-
-	hit_ms = (long)(dur_beat * (float)beat_ms);
-	start_ms = (long)(start_beat * (float)beat_ms);
-
-	//output note
-	if (dur_task) {
-		outlet_float(x->m_outlet2, (float)hit_ms);
-		dur_task = 0;
-	}
-
-	if (curve_task) {
-		note_norm = (float)MIN(1.0, (elap_ms - start_ms) / (float)hit_ms);
-		
-		switch (curve_type) {
-		case NC_FLAT:
-			note_ease = 1.0;
-			curve_task = 0;
-			break;
-		case NC_LIN:
-			note_ease = note_norm;
-			break;
-		case NC_EI_COS:
-			note_ease = (float)(1.0 - cos(0.5 * note_norm * MATH_PI));
-			break;
-		case NC_EI_POWO:
-			note_ease = (float)pow(note_norm, DFLT_POWEXP);
-			break;
-		case NC_EI_POWU:
-			note_ease = (float)(1.0 - pow(1.0 - note_norm, 1.0 / DFLT_POWEXP));
-			break;
-		case NC_EI_CIRC:
-			note_ease = (float)(1.0 - sqrt(1.0 - pow(note_norm, 20)));
-			break;
-		case NC_EO_SIN:
-			note_ease = (float)sin(note_norm * MATH_PI / 2.0);
-			break;
-		case NC_EO_POWU:
-			note_ease = (float)pow(note_norm, 1.0 / DFLT_POWEXP);
-			break;
-		case NC_EO_POWO:
-			note_ease = (float)(1.0 - pow(1.0 - note_norm, DFLT_POWEXP));
-			break;
-		case NC_EO_CIRC:
-			note_ease = (float)sqrt(1.0 - pow(note_norm - 1.0, 2.0));
-			break;
-		case NC_EIO_COS:
-			note_ease = (float)(-(cos(MATH_PI * note_norm) - 1.0) / 2.0);
-			break;
-		case NC_EIO_POW:
-			if (note_norm < 0.5) {
-				note_ease = (float)(4.0 * pow(note_norm, DFLT_POWEXP));
-			}
-			else {
-				note_ease = (float)(1.0 - (pow(-2.0 * note_norm + 2.0, DFLT_POWEXP)) / 2.0);
-			}
-			break;
-		case NC_EIO_CIRC:
-			if (note_norm < 0.5)
-				note_ease = (float)((1.0 - sqrt(1.0 - pow(2.0 * note_norm, 2.0))) / 2.0);
-			else
-				note_ease = (float)((sqrt(1.0 - pow(-2.0 * note_norm + 2.0, 2.0)) + 1.0) / 2.0);
-			break;
-		case NC_EOI_ACOS:
-			note_ease = (float)(acos(-2.0 * note_norm + 1.0) / MATH_PI);
-			break;
-		case NC_EOI_POW:
-			if (note_norm < 0.5) {
-				note_ease = (float)pow(0.25 * note_norm, 1.0 / DFLT_POWEXP);
-			}
-			else {
-				note_ease = (float)((2.0 - pow(2.0 - 2.0 * note_norm, 1.0 / DFLT_POWEXP)) / 2.0);
-			}
-			break;
-		case NC_EOI_CIRC:
-			if (note_norm < 0.5) {
-				note_ease = (float)((sqrt(1.0 - pow(2.0 * note_norm - 1.0, 2.0))) / 2.0);
-			}
-			else {
-				note_ease = (float)(1.0 - (float)sqrt(note_norm - note_norm * note_norm));
-			}
-			break;
-		default: //NC_FLAT
-			note_ease = 1.0;
-			curve_task = 0;
-			break;
 		}
 
 		note_final = curve_start + (curve_end - curve_start) * note_ease;
@@ -546,20 +535,25 @@ void fl_maza_tick(t_fl_maza *x)
 			note_final = (float)floor(note_final);
 			break;
 		}
-
-		outlet_float(x->m_outlet1, note_final);
+		
+		//output note
+		if (curve_task) {
+			outlet_float(x->m_outlet1, note_final);
+			curve_task = 0;
+		}
 	}
+	else {
+		//no hits left, only final flag
+		next_start_ms = bar_ms;
 
-	if (end_task) {
-		clock_unset(x->m_clock);
-		outlet_bang(x->m_outlet3);
-		if (loop) { fl_maza_bang(x); }
-		end_task = 0;
+		if (elap_ms >= next_start_ms) {
+			clock_unset(x->m_clock);
+			outlet_bang(x->m_outlet3);
+			if (loop) { fl_maza_bang(x); }
+		}
 	}
 
 	x->curve_task = curve_task;
-	x->dur_task = dur_task;
-	x->end_task = end_task;
 }
 
 long z_mod(long x, long base)

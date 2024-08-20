@@ -67,7 +67,7 @@
 					"maxclass" : "comment",
 					"numinlets" : 1,
 					"numoutlets" : 0,
-					"patching_rect" : [ 156.0, 239.0, 78.0, 20.0 ],
+					"patching_rect" : [ 156.0, 203.0, 78.0, 20.0 ],
 					"text" : "duration [ms]"
 				}
 
@@ -78,7 +78,7 @@
 					"maxclass" : "comment",
 					"numinlets" : 1,
 					"numoutlets" : 0,
-					"patching_rect" : [ 156.0, 203.0, 65.0, 20.0 ],
+					"patching_rect" : [ 156.0, 239.0, 65.0, 20.0 ],
 					"text" : "note (midi)"
 				}
 

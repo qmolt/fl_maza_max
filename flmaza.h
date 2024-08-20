@@ -1,3 +1,15 @@
+/*
+wrap mode: 
+	default: clamp
+
+loop mode:
+	default: off
+
+calling bar resets: 
+	filter mode: nat
+	curve mode: set 
+*/
+
 #ifndef fl_maza_h
 #define fl_maza_h
 
@@ -7,6 +19,8 @@
 #include <math.h>
 
 #define DFLT_BEAT 1.0f
+
+#define DFLT_LOOPMODE 0
 
 #define MAX_NOTES_SIZE 127
 #define MAX_HITS_SIZE 127
