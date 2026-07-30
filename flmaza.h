@@ -1,15 +1,3 @@
-/*
-wrap mode: 
-	default: clamp
-
-loop mode:
-	default: off
-
-calling bar resets: 
-	filter mode: nat
-	curve mode: set 
-*/
-
 #ifndef fl_maza_h
 #define fl_maza_h
 
@@ -22,85 +10,63 @@ calling bar resets:
 
 #define DFLT_LOOPMODE 0
 
-#define MAX_NOTES_SIZE 127
-#define MAX_HITS_SIZE 127
+#define MAX_NOTES 127
+#define MAX_HITS 127
 #define MIN_BEATMS 50
 #define DFLT_BEATMS 500 //120bpm
 
-#define DFLT_OCT_DIV 12
 #define DFLT_TIMEINTERVAL 20
-#define DFLT_POWEXP 3.0
 
-#define MATH_PI 3.14159265358979323846
+#define MAX_VOICES 10
+#define MAX_CHORDS 32
 
-enum WRAPMODES {WM_CLAMP, WM_REPEAT, WM_MIRROR, WM_TOTAL};
-enum FILTERMODES {FM_REAL, FM_NAT};// /f0 /f1
-enum NOTECURVES {
-	NC_SET,		// 
-	NC_FLAT,	// y = a			// /a	1: constant 
-	NC_LIN,		// y = x			// /x	2: lineal
-	NC_EI_COS,	// y = cos(x)		// /it	3: ease in ("speeding-up" function)
-	NC_EI_POWO,	// y = x^a (a>1)	// /ip
-	NC_EI_POWU,	// y = x^a (a<1)	// /ir
-	NC_EI_CIRC,	// y^2 - x^2		// /ic
-	NC_EO_SIN,	// y = sin(x)		// /ot	7: ease out ("slowing-down" function)
-	NC_EO_POWU,	// y = x^a (a<1)	// /or
-	NC_EO_POWO,	// y = x^a (a>1)	// /op
-	NC_EO_CIRC,	// y^2 - x^2		// /oc
-	NC_EIO_COS,	// y = cos			// /st	11: ease in-out (sigmoid-shaped function)
-	NC_EIO_POW,	// y = x^a			// /sp 
-	NC_EIO_CIRC,// y^2 - x^2		// /sc
-	NC_EOI_ACOS,// y = acos			// /lt	14: ease out-in (logit-shaped function)
-	NC_EOI_POW,	// y = x^a			// /lr 
-	NC_EOI_CIRC	// y^2 - x^2		// /lc
-}; 
-/*
-i:ease in; o:ease out; s:sigmoid; l:logit
-t:trigonom; c:circle; p:power; r:root 
-*/
+enum WRAPMODES { WM_CLAMP, WM_REPEAT, WM_MIRROR, WM_TOTAL };
+enum NOTETYPES { N_NOTE, N_CHORDIDX };
+enum NOTEINPUT {
+	F_DEFINEMELODY,	// a
+	F_DEFINECHORD	// v
+};
 
 typedef struct _fl_beat {
 	float dur_beat;
 	float start_beat;
 }fl_beat;
-
-typedef struct _fl_curve {
-	float start;
-	float end;
-	short curve_type;
-	short filter_mode;
+typedef struct _fl_note {
+	short type;
+	t_atom note;
+	short chord_idx;
 }fl_note;
+
+typedef struct _fl_chord {
+	t_atom *notes;
+	short voices;
+}fl_chord;
 
 typedef struct _fl_maza {
 	t_object obj;
-
-	long oct_div;
 	
-	short curve_task;
-	short dur_task;
-	short end_task;
-	short curve_type;
-	float curve_start;
-	float curve_end;
-	short filter_mode;
-	float dur_beat;
-	float start_beat;
+	fl_chord *old_chords;
+	fl_chord *new_chords;
+	short total_old_chords;
+	short total_new_chords;
+	short index_old_chords;
 
 	fl_note *old_notes;
 	fl_note *new_notes;
 	long total_old_notes;
 	long total_new_notes;
 	long index_old_notes;
-	short wrap_mode;
-	short filter_toggle;
 
+	short wrap_mode;
+	
 	fl_beat *old_hits;
 	fl_beat *new_hits;
 	long total_old_hits;
 	long total_new_hits;
-	float old_cifra; 
-	float new_cifra;
 	long index_old_hits;
+
+	float old_timesig;
+	float new_timesig;
 
 	long beat_ms;
 	long time;
@@ -135,4 +101,6 @@ void fl_maza_tick(t_fl_maza *x);
 void fl_maza_free(t_fl_maza *x);
 
 long z_mod(long x, long base);
+int is_pure_float(const char *token);
+long idx_wrap(short mode, long boundary, long n);
 #endif
