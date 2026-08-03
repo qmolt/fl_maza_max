@@ -22,7 +22,8 @@ void *fl_maza_new(t_symbol *s, short argc, t_atom *argv)
 {
 	t_fl_maza *x = (t_fl_maza *)object_alloc(fl_maza_class);
 
-	x->m_outlet3 = outlet_new((t_object *)x, "bang");	//final bang
+	x->m_outlet4 = outlet_new((t_object *)x, "bang");	//final bang
+	x->m_outlet3 = outlet_new((t_object *)x, "float");	//pitchbend
 	x->m_outlet2 = outlet_new((t_object *)x, "int");	//dur
 	x->m_outlet1 = outlet_new((t_object *)x, "list");	//note
 
@@ -50,6 +51,9 @@ void *fl_maza_new(t_symbol *s, short argc, t_atom *argv)
 
 	x->wrap_mode = WM_CLAMP;
 
+	x->curve_type = -1;
+	x->curve_amp = 0.0;
+
 	x->old_chords = (fl_chord *)sysmem_newptr(MAX_CHORDS * sizeof(fl_chord));
 	if (!x->old_chords) { object_error((t_object *)x, "fl_maza_new: no memory space for old_chords list"); return x; }
 	for (long i = 0; i < MAX_CHORDS; i++) {
@@ -74,16 +78,30 @@ void *fl_maza_new(t_symbol *s, short argc, t_atom *argv)
 	x->old_notes = (fl_note *)sysmem_newptr(MAX_NOTES * sizeof(fl_note));
 	if (!x->old_notes) { object_error((t_object *)x, "fl_maza_new: no memory space for old_notes list"); return x; }
 	for (long i = 0; i < MAX_NOTES; i++) {
-		x->old_notes[i].type = N_NOTE;
-		x->old_notes[i].chord_idx = 0;
 		atom_setfloat(&x->old_notes[i].note, 0.0f);
+		x->old_notes[i].chord_idx = -1;
+		x->old_notes[i].curve_idx = -1;
+
 	}
 	x->new_notes = (fl_note *)sysmem_newptr(MAX_NOTES * sizeof(fl_note));
 	if (!x->new_notes) { object_error((t_object *)x, "fl_maza_new: no memory space for new_notes list"); return x; }
 	for (long i = 0; i < MAX_NOTES; i++) {
-		x->new_notes[i].type = N_NOTE;
-		x->new_notes[i].chord_idx = 0;
 		atom_setfloat(&x->new_notes[i].note, 0.0f);
+		x->new_notes[i].chord_idx = -1;
+		x->new_notes[i].curve_idx = -1;
+	}
+
+	x->old_curves = (fl_curve *)sysmem_newptr(MAX_CURVES * sizeof(fl_curve));
+	if (!x->old_curves) { object_error((t_object *)x, "fl_maza_new: no memory space for old_curves list"); return x; }
+	for (long i = 0; i < MAX_CURVES; i++) {
+		x->old_curves[i].type = NC_LIN;
+		x->old_curves[i].ampl = 0.0;
+	}
+	x->new_curves = (fl_curve *)sysmem_newptr(MAX_CURVES * sizeof(fl_curve));
+	if (!x->new_curves) { object_error((t_object *)x, "fl_maza_new: no memory space for new_curves list"); return x; }
+	for (long i = 0; i < MAX_CURVES; i++) {
+		x->new_curves[i].type = NC_LIN;
+		x->new_curves[i].ampl = 0.0;
 	}
 
 	x->old_hits = (fl_beat *)sysmem_newptr(MAX_HITS * sizeof(fl_beat));
@@ -113,6 +131,7 @@ void fl_maza_assist(t_fl_maza *x, void *b, long msg, long arg, char *dst)
 		switch (arg) {
 		case O_NOTE:sprintf(dst, "(list) notes"); break;
 		case O_DUR: sprintf(dst, "(long) note duration in milliseconds"); break;
+		case O_PITCHBEND: sprintf(dst, "(float) pitchbend"); break;
 		case O_FINALFLAG: sprintf(dst, "(bang) end flag"); break;
 		}
 	}
@@ -173,14 +192,13 @@ void fl_maza_bar(t_fl_maza *x, t_symbol *msg, short argc, t_atom *argv)
 		3. mel:		/a: note
 					/c: chord
 					/r: repeat chord
+		3.1 curve:	/x	lineal
+					/it	/ip /ir /ic		//ease in ("speeding-up" function)
+					/ot	/or /op /oc		//ease out ("slowing-down" function)
+					/st	/sp /sc			//ease in-out (sigmoid-shaped function)
+					/lt	/lr /lc			//ease out-in (logit-shaped function)
 		4. chord:	/v: chord
 		----------------------------------
-		deprecated:
-		mel:	/f0 /f1 /s /x  
-				/it /ip /ir /ic
-				/ot /or /op /oc
-				/st /sp /sc
-				/lt /lr /lc
 	*/
 	t_atom *ap = argv;
 	long ac = argc;
@@ -195,6 +213,8 @@ void fl_maza_bar(t_fl_maza *x, t_symbol *msg, short argc, t_atom *argv)
 	short acum_voices = 0;
 	short acum_def_chords = 0;
 	short first_voice = 0;
+	short acum_curves = 0;
+	short has_curve = 0;
 
 	float beat = DFLT_BEAT;
 	long subdiv;
@@ -211,6 +231,7 @@ void fl_maza_bar(t_fl_maza *x, t_symbol *msg, short argc, t_atom *argv)
 	x->total_old_hits = 0;
 	x->total_old_notes = 0;
 	x->total_old_chords = 0;
+	x->total_old_curves = 0;
 
 	float note;
 	short flag = 0;
@@ -270,9 +291,10 @@ void fl_maza_bar(t_fl_maza *x, t_symbol *msg, short argc, t_atom *argv)
 						//3. mel
 						if (flag == F_DEFINEMELODY && acum_notes < MAX_NOTES - 1) {
 							acum_notes++;
-							x->new_notes[acum_notes - 1].type = N_NOTE;
-							x->new_notes[acum_notes - 1].chord_idx = 0;
+							x->new_notes[acum_notes - 1].chord_idx = -1;
 							atom_setfloat(&x->new_notes[acum_notes - 1].note, note);
+							if (has_curve) { x->new_notes[acum_notes - 1].curve_idx = acum_curves - 1; has_curve = 0; }
+							else{ x->new_notes[acum_notes - 1].curve_idx = - 1; }
 						}
 						//4. chord
 						else if (flag == F_DEFINECHORD && acum_def_chords < MAX_CHORDS - 1 && acum_voices < MAX_VOICES - 1) {
@@ -286,6 +308,7 @@ void fl_maza_bar(t_fl_maza *x, t_symbol *msg, short argc, t_atom *argv)
 						}
 					}
 					else {
+						//melody or chord starter
 						if (!strcmp(token, "a")) { 
 							flag = F_DEFINEMELODY; 
 						}
@@ -294,19 +317,50 @@ void fl_maza_bar(t_fl_maza *x, t_symbol *msg, short argc, t_atom *argv)
 							first_voice = 1;
 							acum_voices = 0;
 						}
+						//any string after /a/
 						else if (flag == F_DEFINEMELODY) {
 							if (!strcmp(token, "c") && acum_notes < MAX_NOTES - 1 && acum_chords < MAX_CHORDS - 1) {
 								acum_chords++;
 								acum_notes++;
-								x->new_notes[acum_notes - 1].type = N_CHORDIDX;
 								x->new_notes[acum_notes - 1].chord_idx = acum_chords - 1;
 								atom_setfloat(&x->new_notes[acum_notes - 1].note, 0.0f);
+								if (has_curve) { x->new_notes[acum_notes - 1].curve_idx = acum_curves - 1; has_curve = 0; }
+								else { x->new_notes[acum_notes - 1].curve_idx = -1; }
 							}
 							else if (!strcmp(token, "r") && acum_notes < MAX_NOTES - 1 && acum_chords < MAX_CHORDS) {
 								acum_notes++;
-								x->new_notes[acum_notes - 1].type = N_CHORDIDX;
 								x->new_notes[acum_notes - 1].chord_idx = acum_chords - 1;
 								atom_setfloat(&x->new_notes[acum_notes - 1].note, 0.0f);
+								if (has_curve) { x->new_notes[acum_notes - 1].curve_idx = acum_curves - 1; has_curve = 0; }
+								else { x->new_notes[acum_notes - 1].curve_idx = -1; }
+							}
+							else {
+								char prefix[8];
+								float curve_amp;
+								short curve_type;
+								parse_flagged_token(token, prefix, &curve_amp);
+
+								if (!strcmp(prefix, "x")) { curve_type = NC_LIN; }
+								else if (!strcmp(prefix, "it")) { curve_type = NC_EI_COS; }
+								else if (!strcmp(prefix, "ip")) { curve_type = NC_EI_POWO; }
+								else if (!strcmp(prefix, "ir")) { curve_type = NC_EI_POWU; }
+								else if (!strcmp(prefix, "ic")) { curve_type = NC_EI_CIRC; }
+								else if (!strcmp(prefix, "ot")) { curve_type = NC_EO_SIN; }
+								else if (!strcmp(prefix, "or")) { curve_type = NC_EO_POWU; }
+								else if (!strcmp(prefix, "op")) { curve_type = NC_EO_POWO; }
+								else if (!strcmp(prefix, "oc")) { curve_type = NC_EO_CIRC; }
+								else if (!strcmp(prefix, "st")) { curve_type = NC_EIO_COS; }
+								else if (!strcmp(prefix, "sp")) { curve_type = NC_EIO_POW; }
+								else if (!strcmp(prefix, "sc")) { curve_type = NC_EIO_CIRC; }
+								else if (!strcmp(prefix, "lt")) { curve_type = NC_EOI_ACOS; }
+								else if (!strcmp(prefix, "lr")) { curve_type = NC_EOI_POW; }
+								else if (!strcmp(prefix, "lc")) { curve_type = NC_EOI_CIRC; }
+								else { curve_type = NC_NONE; continue; }
+
+								acum_curves++;
+								x->new_curves[acum_curves - 1].type = curve_type;
+								x->new_curves[acum_curves - 1].ampl = curve_amp;
+								has_curve = 1;
 							}
 						}
 					}
@@ -323,14 +377,18 @@ void fl_maza_bar(t_fl_maza *x, t_symbol *msg, short argc, t_atom *argv)
 	x->total_new_hits = acum_hits;
 	x->total_new_notes = acum_notes;
 	x->total_new_chords = acum_def_chords;
+	x->total_new_curves = acum_curves;
 
 	clock_unset(x->m_clock);
 	for (long i = 0; i < acum_hits; i++) {
 		x->old_hits[i].dur_beat = x->new_hits[i].dur_beat;
 		x->old_hits[i].start_beat = x->new_hits[i].start_beat;
 	}
+	for (long i = 0; i < acum_curves; i++) {
+		x->old_curves[i].type = x->new_curves[i].type;
+		x->old_curves[i].ampl = x->new_curves[i].ampl;
+	}
 	for (long i = 0; i < acum_notes; i++) {
-		x->old_notes[i].type = x->new_notes[i].type;
 		x->old_notes[i].note = x->new_notes[i].note;
 		x->old_notes[i].chord_idx = x->new_notes[i].chord_idx;
 	}
@@ -344,6 +402,7 @@ void fl_maza_bar(t_fl_maza *x, t_symbol *msg, short argc, t_atom *argv)
 	x->total_old_hits = x->total_new_hits;
 	x->total_old_notes = x->total_new_notes;
 	x->total_old_chords = x->total_new_chords;
+	x->total_old_curves = x->total_new_curves;
 
 	fl_maza_bang(x);
 }
@@ -352,6 +411,9 @@ void fl_maza_free(t_fl_maza *x)
 {
 	sysmem_freeptr(x->old_hits);
 	sysmem_freeptr(x->new_hits);
+
+	sysmem_freeptr(x->old_curves);
+	sysmem_freeptr(x->new_curves);
 
 	sysmem_freeptr(x->old_chords);
 	sysmem_freeptr(x->new_chords);
@@ -376,8 +438,9 @@ void fl_maza_int(t_fl_maza *x, long n)
 void fl_maza_bang(t_fl_maza *x)
 {
 	x->index_old_hits = 0;
+	x->index_old_curves = -1;
 	x->index_old_notes = 0;
-	x->index_old_chords = 0;
+	x->index_old_chords = -1;
 
 	x->time = (long)gettime_forobject((t_object *)x);
 	
@@ -394,6 +457,10 @@ void fl_maza_tick(t_fl_maza *x)
 	long index_hits = x->index_old_hits;
 	long total_hits = x->total_old_hits;
 
+	fl_curve *p_curve = x->old_curves;
+	short index_curves = x->index_old_curves;
+	short total_curves = x->total_old_curves;
+
 	fl_note *p_note = x->old_notes;
 	long index_notes = x->index_old_notes;
 	long total_notes = x->total_old_notes;
@@ -405,9 +472,13 @@ void fl_maza_tick(t_fl_maza *x)
 	short loop = x->loop_mode;
 	short wrap_mode = x->wrap_mode;
 
+	double norm_hit;
+	double curve;
+	short curve_type = x->curve_type;
+	double curve_amp = x->curve_amp;
+
 	t_atom_long hit_ms;
 	long start_ms;
-	short note_type;
 	long bar_ms = (long)(timesig * (double)beat_ms);
 
 	//schedule next tick call
@@ -427,13 +498,12 @@ void fl_maza_tick(t_fl_maza *x)
 			outlet_int(x->m_outlet2, hit_ms);
 			index_hits++;
 
-			//note	
+			//note or chord
 			index_notes = idx_wrap(wrap_mode, index_hits, total_notes); 
-			note_type = p_note[index_notes].type;
+			index_chords = p_note[index_notes].chord_idx;
+			index_curves = p_note[index_notes].curve_idx;
 
-			if (note_type == N_CHORDIDX) {
-				index_chords = p_note[index_notes].chord_idx;
-				
+			if (index_chords > -1) {
 				if (index_chords < total_chords) {
 					outlet_list(x->m_outlet1, 0L, p_chord[index_chords].voices, p_chord[index_chords].notes);
 				}
@@ -441,17 +511,31 @@ void fl_maza_tick(t_fl_maza *x)
 			else {
 				outlet_list(x->m_outlet1, 0L, 1, &p_note[index_notes].note);
 			}
+
+			//curve
+			if (index_curves > -1 && index_curves < total_curves) {
+				x->curve_type = curve_type = p_curve[index_curves].type;
+				x->curve_amp = curve_amp = p_curve[index_curves].ampl;
+			}
 		}
 	}
 	//no hits left, only final flag
 	else if (elap_ms >= bar_ms) {
+		start_ms = bar_ms;
 		clock_unset(x->m_clock);
-		outlet_bang(x->m_outlet3);
+		outlet_bang(x->m_outlet4);
 		if (loop) { fl_maza_bang(x); }
+	}
+	
+	if (index_curves > -1) {
+		norm_hit = (double)(elap_ms - start_ms) / (double)hit_ms;
+		curve = curve_amp * easing_curves(curve_type, MIN(1.0, norm_hit));
+		outlet_float(x->m_outlet3, curve);
 	}
 
 	//save state
 	x->index_old_hits = index_hits;
+	x->index_old_curves = index_curves;
 	x->index_old_notes = index_notes;
 	x->index_old_chords = index_chords;
 }
@@ -463,14 +547,6 @@ long z_mod(long x, long base)
 	while (y < 0) { y += b; }
 	y = y % b;
 	return y;
-}
-
-int is_pure_float(const char *token) {
-	char *endptr;
-	float val;
-	if (!token) return 0;
-	val = strtof(token, &endptr);
-	return (endptr != token) && (*endptr == '\0') && isfinite(val);
 }
 
 long idx_wrap(short mode, long boundary, long n) {
@@ -489,4 +565,102 @@ long idx_wrap(short mode, long boundary, long n) {
 		break;
 	}
 	return out;
+}
+
+int is_pure_float(const char *token) {
+	char *endptr;
+	float val;
+	if (!token) return 0;
+	val = strtof(token, &endptr);
+	return (endptr != token) && (*endptr == '\0') && isfinite(val);
+}
+
+void parse_flagged_token(const char *token, char *prefix_out, float *val_out) {
+	const char *p = token;
+	int prefix_len = 0;
+
+	while (*p && !isdigit(*p) && *p != '-' && *p != '+') {
+		p++;
+		prefix_len++;
+	}
+
+	// copy prefix
+	strncpy(prefix_out, token, prefix_len);
+	prefix_out[prefix_len] = '\0';
+
+	// parse number
+	*val_out = strtof(p, NULL);
+}
+
+double easing_curves(short curve_type, double norm_hit) {
+	double note_ease;
+
+	switch (curve_type) {
+	case NC_LIN:
+		note_ease = norm_hit;
+		break;
+	case NC_EI_COS:
+		note_ease = (float)(1.0 - cos(0.5 * norm_hit * MATH_PI));
+		break;
+	case NC_EI_POWO:
+		note_ease = (float)pow(norm_hit, DFLT_POWEXP);
+		break;
+	case NC_EI_POWU:
+		note_ease = (float)(1.0 - pow(1.0 - norm_hit, 1.0 / DFLT_POWEXP));
+		break;
+	case NC_EI_CIRC:
+		note_ease = (float)(1.0 - sqrt(1.0 - pow(norm_hit, 20)));
+		break;
+	case NC_EO_SIN:
+		note_ease = (float)sin(norm_hit * MATH_PI / 2.0);
+		break;
+	case NC_EO_POWU:
+		note_ease = (float)pow(norm_hit, 1.0 / DFLT_POWEXP);
+		break;
+	case NC_EO_POWO:
+		note_ease = (float)(1.0 - pow(1.0 - norm_hit, DFLT_POWEXP));
+		break;
+	case NC_EO_CIRC:
+		note_ease = (float)sqrt(1.0 - pow(norm_hit - 1.0, 2.0));
+		break;
+	case NC_EIO_COS:
+		note_ease = (float)(-(cos(MATH_PI * norm_hit) - 1.0) / 2.0);
+		break;
+	case NC_EIO_POW:
+		if (norm_hit < 0.5) {
+			note_ease = (float)(4.0 * pow(norm_hit, DFLT_POWEXP));
+		}
+		else {
+			note_ease = (float)(1.0 - (pow(-2.0 * norm_hit + 2.0, DFLT_POWEXP)) / 2.0);
+		}
+		break;
+	case NC_EIO_CIRC:
+		if (norm_hit < 0.5)
+			note_ease = (float)((1.0 - sqrt(1.0 - pow(2.0 * norm_hit, 2.0))) / 2.0);
+		else
+			note_ease = (float)((sqrt(1.0 - pow(-2.0 * norm_hit + 2.0, 2.0)) + 1.0) / 2.0);
+		break;
+	case NC_EOI_ACOS:
+		note_ease = (float)(acos(-2.0 * norm_hit + 1.0) / MATH_PI);
+		break;
+	case NC_EOI_POW:
+		if (norm_hit < 0.5) {
+			note_ease = (float)pow(0.25 * norm_hit, 1.0 / DFLT_POWEXP);
+		}
+		else {
+			note_ease = (float)((2.0 - pow(2.0 - 2.0 * norm_hit, 1.0 / DFLT_POWEXP)) / 2.0);
+		}
+		break;
+	case NC_EOI_CIRC:
+		if (norm_hit < 0.5) {
+			note_ease = (float)((sqrt(1.0 - pow(2.0 * norm_hit - 1.0, 2.0))) / 2.0);
+		}
+		else {
+			note_ease = (float)(1.0 - (float)sqrt(norm_hit - norm_hit * norm_hit));
+		}
+		break;
+	default:
+		note_ease = 0.0;
+		break;
+	}
 }

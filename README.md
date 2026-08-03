@@ -7,7 +7,7 @@ An external for Max 8 (Max/MSP). 'maza' is the spanish translation of the word m
 # Features
 
 - The beat period (in milliseconds) can be set with a message 'ms_beat'. Default is 500 ms (120 BPM).
-- Any rhythm will be played even if no list of notes was provided.
+- A rhythm entered will be played even if no list of notes was provided.
 - Has a 'loop' toggle option.
 - Wrap modes: If there are less notes than beat subdivisions listed the notes will repeat in different patterns:
 
@@ -18,6 +18,8 @@ wrap modes:
 - 2: mirror notes from the end
 ```
 
+- Chords won't be wrapped if there are less chords defined than scheduled in subdivision list.
+- No fail proof for previously defined chords if chords are listed but not defined.
 - A melody can be created by using midi values and different commands to set and target notes:
 
 ```
@@ -43,8 +45,25 @@ commands:
 /a melody list
 /c play new chord
 /r repeat last chord
+/x pitchbend commands
 ----------chord
 /v chord list
+----------pitchbend
+/x 	lineal 		y = x
+/it ease in 	y = cos(x)
+/ip ease in 	y = x^a (a>1)
+/ir ease in 	y = x^a (a<1)
+/ic ease in 	y^2 - x^2
+/ot ease out 	y = sin(x)
+/or ease out 	y = x^a (a<1)
+/op ease out 	y = x^a (a>1)
+/oc ease out 	y^2 - x^2
+/st ease in-out y = cos
+/sp ease in-out y = x^a
+/sc ease in-out y^2 - x^2
+/lt ease out-in y = acos
+/lr ease out-in y = x^a
+/lc ease out-in y^2 - x^2
 
 ```
 
@@ -60,8 +79,6 @@ Melodies and timing for chords are defined using commands that start with /a/ an
 
 
 # Notes
-
-- A previous version included commands to make melodies from a starting note, to a target note using easing curves. This was actually out of the scope of this external but might come back later as pitchbend functionality.
 
 - This external is a later version of [fl_ritmo~](https://github.com/qmolt/fl_ritmo-max) (archived). In comparison, fl_maza includes compatibility to play melodies but the major difference is that fl_ritmo~ was a real-time external that counted samples to time the output events, and fl_maza uses the same clock efficiently to avoid linking a method to the DSP chain so it works independiently from dac state, also outputs float values instead of signal values.
 
