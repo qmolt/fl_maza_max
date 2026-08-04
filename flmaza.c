@@ -53,6 +53,10 @@ void *fl_maza_new(t_symbol *s, short argc, t_atom *argv)
 
 	x->curve_type = -1;
 	x->curve_amp = 0.0;
+	x->curve_task = 0;
+	x->start_curve = 0;
+
+	x->hit_ms = 0;
 
 	x->old_chords = (fl_chord *)sysmem_newptr(MAX_CHORDS * sizeof(fl_chord));
 	if (!x->old_chords) { object_error((t_object *)x, "fl_maza_new: no memory space for old_chords list"); return x; }
@@ -391,6 +395,7 @@ void fl_maza_bar(t_fl_maza *x, t_symbol *msg, short argc, t_atom *argv)
 	for (long i = 0; i < acum_notes; i++) {
 		x->old_notes[i].note = x->new_notes[i].note;
 		x->old_notes[i].chord_idx = x->new_notes[i].chord_idx;
+		x->old_notes[i].curve_idx = x->new_notes[i].curve_idx;
 	}
 	for (long i = 0; i < acum_def_chords; i++) {
 		x->old_chords[i].voices = x->new_chords[i].voices;
@@ -415,6 +420,10 @@ void fl_maza_free(t_fl_maza *x)
 	sysmem_freeptr(x->old_curves);
 	sysmem_freeptr(x->new_curves);
 
+	for (long i = 0; i < MAX_CHORDS; i++) {
+		sysmem_freeptr(x->old_chords[i].notes);
+		sysmem_freeptr(x->new_chords[i].notes);
+	}
 	sysmem_freeptr(x->old_chords);
 	sysmem_freeptr(x->new_chords);
 
@@ -424,13 +433,13 @@ void fl_maza_free(t_fl_maza *x)
 
 void fl_maza_float(t_fl_maza *x, double f)
 {
+	if (f != f) { return; }
+
 	fl_maza_int(x, (long)f);
 }
 
 void fl_maza_int(t_fl_maza *x, long n)
 {
-	if (n != n) { return; }
-
 	if (n > 0) { fl_maza_bang(x); }
 	else { clock_unset(x->m_clock); }
 }
@@ -438,9 +447,7 @@ void fl_maza_int(t_fl_maza *x, long n)
 void fl_maza_bang(t_fl_maza *x)
 {
 	x->index_old_hits = 0;
-	x->index_old_curves = -1;
 	x->index_old_notes = 0;
-	x->index_old_chords = -1;
 
 	x->time = (long)gettime_forobject((t_object *)x);
 	
@@ -476,9 +483,11 @@ void fl_maza_tick(t_fl_maza *x)
 	double curve;
 	short curve_type = x->curve_type;
 	double curve_amp = x->curve_amp;
+	short curve_task = x->curve_task;
+	long start_curve = x->start_curve;
 
-	t_atom_long hit_ms;
-	long start_ms;
+	t_atom_long hit_ms = x->hit_ms;
+	long start_ms = 0;
 	long bar_ms = (long)(timesig * (double)beat_ms);
 
 	//schedule next tick call
@@ -494,12 +503,11 @@ void fl_maza_tick(t_fl_maza *x)
 		if (elap_ms >= start_ms) {
 
 			//duration
-			hit_ms = (t_atom_long)(p_hits[index_hits].dur_beat * (double)beat_ms);
+			x->hit_ms = hit_ms = (t_atom_long)(p_hits[index_hits].dur_beat * (double)beat_ms);
 			outlet_int(x->m_outlet2, hit_ms);
-			index_hits++;
 
 			//note or chord
-			index_notes = idx_wrap(wrap_mode, index_hits, total_notes); 
+			index_notes = idx_wrap(wrap_mode, total_notes, index_hits);
 			index_chords = p_note[index_notes].chord_idx;
 			index_curves = p_note[index_notes].curve_idx;
 
@@ -513,10 +521,21 @@ void fl_maza_tick(t_fl_maza *x)
 			}
 
 			//curve
-			if (index_curves > -1 && index_curves < total_curves) {
-				x->curve_type = curve_type = p_curve[index_curves].type;
-				x->curve_amp = curve_amp = p_curve[index_curves].ampl;
+			if (index_curves > -1) {
+				if (index_curves < total_curves) {
+					x->curve_type = curve_type = p_curve[index_curves].type;
+					x->curve_amp = curve_amp = p_curve[index_curves].ampl;
+					x->curve_task = curve_task = 1;
+					x->start_curve = start_curve = start_ms;
+				}
 			}
+			else {
+				if (curve_task == CV_CURVE) { x->curve_task = curve_task = CV_END; }
+				else { x->curve_task = curve_task = CV_NOTHING; }
+			}
+
+			//next hit
+			index_hits++;
 		}
 	}
 	//no hits left, only final flag
@@ -526,11 +545,15 @@ void fl_maza_tick(t_fl_maza *x)
 		outlet_bang(x->m_outlet4);
 		if (loop) { fl_maza_bang(x); }
 	}
-	
-	if (index_curves > -1) {
-		norm_hit = (double)(elap_ms - start_ms) / (double)hit_ms;
+
+	if (curve_task == CV_CURVE) {
+		norm_hit = (double)(elap_ms - start_curve) / (double)hit_ms;
 		curve = curve_amp * easing_curves(curve_type, MIN(1.0, norm_hit));
 		outlet_float(x->m_outlet3, curve);
+	}
+	else if (curve_task == CV_END) { 
+		outlet_float(x->m_outlet3, 0.0);
+		x->curve_task = CV_NOTHING;
 	}
 
 	//save state
@@ -558,7 +581,7 @@ long idx_wrap(short mode, long boundary, long n) {
 		break;
 	case WM_MIRROR:
 		odd_repeat = z_mod(n, 2 * boundary);
-		out = (odd_repeat > boundary) ? z_mod(boundary - odd_repeat, boundary) : odd_repeat ;
+		out = (odd_repeat >= boundary) ? z_mod(boundary - odd_repeat, boundary) : odd_repeat ;
 		break;
 	default: //WM_CLAMP
 		out = MIN(n, boundary - 1);
@@ -663,4 +686,6 @@ double easing_curves(short curve_type, double norm_hit) {
 		note_ease = 0.0;
 		break;
 	}
+
+	return note_ease;
 }

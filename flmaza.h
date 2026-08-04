@@ -24,6 +24,7 @@
 #define DFLT_POWEXP 3.0
 #define MATH_PI 3.14159265358979323846
 
+enum CURVE_TASK { CV_NOTHING, CV_CURVE, CV_END };
 enum WRAPMODES { WM_CLAMP, WM_REPEAT, WM_MIRROR, WM_TOTAL };
 enum NOTEINPUT {
 	F_DEFINEMELODY,	// a
@@ -95,6 +96,9 @@ typedef struct _fl_maza {
 
 	short curve_type;
 	double curve_amp;
+	short curve_task;
+	long start_curve;
+	t_atom_long hit_ms;
 
 	fl_beat *old_hits;
 	fl_beat *new_hits;
