@@ -540,7 +540,6 @@ void fl_maza_tick(t_fl_maza *x)
 	}
 	//no hits left, only final flag
 	else if (elap_ms >= bar_ms) {
-		start_ms = bar_ms;
 		clock_unset(x->m_clock);
 		outlet_bang(x->m_outlet4);
 		if (loop) { fl_maza_bang(x); }
